@@ -20,20 +20,23 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install OpenCode & Bore Tunnel
+      - name: Install Ollama & Bore Tunnel
         run: |
-          curl -fsSL https://opencode.ai/install | bash
-          sudo ln -sf /root/.opencode/bin/opencode /usr/local/bin/opencode || true
-          mkdir -p ~/.opencode/bin
-          export PATH="$HOME/.opencode/bin:/root/.opencode/bin:$PATH"
+          # Install Ollama
+          curl -fsSL https://ollama.com/install.sh | sh || true
 
           # Install bore
           curl -fsSL https://github.com/ekzhang/bore/releases/download/v0.5.3/bore-v0.5.3-x86_64-unknown-linux-musl.tar.gz -o /tmp/bore.tgz
           tar xzf /tmp/bore.tgz -C /tmp
           sudo install -m 755 /tmp/bore /usr/local/bin/bore
 
-          # Warmup opencode
-          opencode models || true
+          # Start Ollama daemon
+          OLLAMA_HOST=127.0.0.1:11434 /usr/local/bin/ollama serve > /tmp/ollama.log 2>&1 &
+          sleep 3
+
+          # Pull models
+          /usr/local/bin/ollama pull qwen2.5-coder:0.5b
+          /usr/local/bin/ollama pull qwen2.5-coder:1.5b
 
       - name: Start Worker and Bore Tunnel
         env:
@@ -41,9 +44,6 @@ jobs:
           T3_WORKER_TOKEN: "t3-gha-worker-token-free"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p /tmp/workspace
-          export PATH="$HOME/.opencode/bin:/root/.opencode/bin:$PATH"
-
           # Start bridge
           node worker-bridge.mjs > /tmp/worker.log 2>&1 &
           sleep 2
@@ -75,4 +75,4 @@ jobs:
           done
 
           # Keep runner alive while tailing logs
-          tail -f /tmp/worker.log /tmp/bore.log
+          tail -f /tmp/worker.log /tmp/bore.log /tmp/ollama.log
