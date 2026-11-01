@@ -8,6 +8,9 @@ on:
         required: true
         default: "t3-free-worker-token"
 
+permissions:
+  contents: write
+
 jobs:
   worker:
     runs-on: ubuntu-latest
@@ -19,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install OpenCode & Bore Tunnel
         run: |
@@ -33,30 +36,50 @@ jobs:
           tar xzf /tmp/bore.tgz -C /tmp
           sudo install -m 755 /tmp/bore /usr/local/bin/bore
 
-      - name: Start Worker and Bore Tunnel
+      - name: Start Worker and Publish Endpoint
         env:
           T3_WORKER_PORT: "4096"
           T3_WORKER_TOKEN: ${{ github.event.inputs.token || 't3-free-worker-token' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p /tmp/workspace
           export PATH="$HOME/.opencode/bin:/root/.opencode/bin:$PATH"
-          
-          # Start bridge
+
+          # Start worker bridge
           node worker-bridge.mjs > /tmp/worker.log 2>&1 &
           sleep 2
 
           # Start bore tunnel
           bore local 4096 --to bore.pub > /tmp/bore.log 2>&1 &
           
-          # Wait for bore tunnel to establish and print endpoint
+          # Wait for bore tunnel to establish
           echo "Waiting for bore tunnel..."
           for i in {1..30}; do
             if grep -q "listening at bore.pub:" /tmp/bore.log; then
-              ENDPOINT=$(grep -o "listening at bore.pub:[0-9]*" /tmp/bore.log | head -n1 | awk '{print $3}')
+              PORT=$(grep -oE "listening at bore\.pub:[0-9]+" /tmp/bore.log | head -n1 | cut -d: -f2)
+              ENDPOINT="http://bore.pub:${PORT}"
               echo "=========================================="
-              echo "T3_WORKER_READY http://$ENDPOINT"
-              echo "T3_WORKER_TOKEN: ${{ env.T3_WORKER_TOKEN }}"
+              echo "T3_WORKER_READY ${ENDPOINT}"
+              echo "T3_WORKER_TOKEN: ${T3_WORKER_TOKEN}"
               echo "=========================================="
+              
+              cat <<EOF > /tmp/endpoint.json
+{
+  "endpoint": "${ENDPOINT}",
+  "token": "${T3_WORKER_TOKEN}",
+  "run_id": "${{ github.run_id }}",
+  "started_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+}
+EOF
+
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git checkout -B endpoint
+              cp /tmp/endpoint.json endpoint.json
+              git add endpoint.json
+              git commit -m "Worker ready at ${ENDPOINT} [skip ci]"
+              git push -f origin endpoint
+              echo "Endpoint published to branch endpoint successfully!"
               break
             fi
             sleep 1
