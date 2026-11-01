@@ -32,6 +32,9 @@ jobs:
           tar xzf /tmp/bore.tgz -C /tmp
           sudo install -m 755 /tmp/bore /usr/local/bin/bore
 
+          # Warmup opencode
+          opencode models || true
+
       - name: Start Worker and Bore Tunnel
         env:
           T3_WORKER_PORT: "4096"
