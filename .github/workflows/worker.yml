@@ -2,11 +2,9 @@ name: T3 Compute Worker
 
 on:
   workflow_dispatch:
-    inputs:
-      token:
-        description: "Auth token for worker"
-        required: true
-        default: "t3-free-worker-token"
+  push:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -39,7 +37,7 @@ jobs:
       - name: Start Worker and Publish Endpoint
         env:
           T3_WORKER_PORT: "4096"
-          T3_WORKER_TOKEN: ${{ github.event.inputs.token || 't3-free-worker-token' }}
+          T3_WORKER_TOKEN: "t3-gha-worker-free-token"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p /tmp/workspace
