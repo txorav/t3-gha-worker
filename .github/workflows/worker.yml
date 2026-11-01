@@ -2,12 +2,10 @@ name: T3 Compute Worker
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   worker:
@@ -20,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
 
       - name: Install OpenCode & Bore Tunnel
         run: |
@@ -34,16 +32,16 @@ jobs:
           tar xzf /tmp/bore.tgz -C /tmp
           sudo install -m 755 /tmp/bore /usr/local/bin/bore
 
-      - name: Start Worker and Publish Endpoint
+      - name: Start Worker and Bore Tunnel
         env:
           T3_WORKER_PORT: "4096"
-          T3_WORKER_TOKEN: "t3-gha-worker-free-token"
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          T3_WORKER_TOKEN: "t3-gha-worker-token-free"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p /tmp/workspace
           export PATH="$HOME/.opencode/bin:/root/.opencode/bin:$PATH"
 
-          # Start worker bridge
+          # Start bridge
           node worker-bridge.mjs > /tmp/worker.log 2>&1 &
           sleep 2
 
@@ -60,28 +58,18 @@ jobs:
               echo "T3_WORKER_READY ${ENDPOINT}"
               echo "T3_WORKER_TOKEN: ${T3_WORKER_TOKEN}"
               echo "=========================================="
-              
-              cat <<EOF > /tmp/endpoint.json
-{
-  "endpoint": "${ENDPOINT}",
-  "token": "${T3_WORKER_TOKEN}",
-  "run_id": "${{ github.run_id }}",
-  "started_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-}
-EOF
 
-              git config user.name "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
-              git checkout -B endpoint
-              cp /tmp/endpoint.json endpoint.json
-              git add endpoint.json
-              git commit -m "Worker ready at ${ENDPOINT} [skip ci]"
-              git push -f origin endpoint
-              echo "Endpoint published to branch endpoint successfully!"
+              # Close existing worker issues
+              gh issue list --state open --json number --jq '.[].number' | while read -r num; do
+                gh issue close "$num" || true
+              done
+
+              # Post new endpoint issue
+              gh issue create --title "WORKER_ENDPOINT" --body "{\"endpoint\":\"${ENDPOINT}\",\"token\":\"${T3_WORKER_TOKEN}\"}"
               break
             fi
             sleep 1
           done
 
-          # Keep runner alive for up to 6 hours while tailing logs
+          # Keep runner alive while tailing logs
           tail -f /tmp/worker.log /tmp/bore.log
